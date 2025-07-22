@@ -9,13 +9,20 @@
   },
   "models": {
     "text-generator": {
-      "sourceModel": "meta-llama/Llama-3.2-3B-Instruct",
-      "provider": "hugging-face",
-      "connection": "hypermode"
+      "sourceModel": "gpt-4o-mini",
+      "connection": "openai",
+      "path": "v1/chat/completions"
     }
   },
   "connections": {
-    "openlibrary": {
+    "openai": {
+      "type": "http",
+      "baseUrl": "https://api.openai.com/",
+      "headers": {
+        "Authorization": "Bearer {{API_KEY}}"
+      }
+    },
+   "openlibrary": {
       "type": "http",
       "baseUrl": "https://openlibrary.org/"
     }

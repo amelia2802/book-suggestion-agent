@@ -13,23 +13,42 @@ import (
 )
 
 type Book struct {
-	Title string `json:"title"`
-	AuthorName []string `json:"author_name"`
-	Subject []string `json:"subject"`
+	Title	string	`json:"title"`
+	AuthorName	[]string	`json:"author_name"`
+	Description string   `json:"description,omitempty"`
 }
 
 type SearchResponse struct{
-	NumFound int `json:"numFound"`
-	Docs []Book `json:"docs"`
+	NumFound	int	`json:"numFound"`
+	Docs	[]Book	`json:"docs"`
 }
 
-func SearchBooks(query string) (*SearchResponse, error){
-	url := fmt.Sprintf("https://openlibrary.org/search.json?q=%s&limit=5",query)
+type BookCategory struct {
+	Books	[]Book	`json:"books"`
+	Category	string	`json:"category"`
+	Description	string	`json:"description"`
+}
 
+const modelname = "text-generator"
+
+func SearchBooks(query string) (*SearchResponse, error){
+
+	if strings.TrimSpace(query) == ""{
+		return  nil, errors.New("query cannot be empty")
+	}
+
+	url := fmt.Sprintf("https://openlibrary.org/search.json?q=%s&limit=5",query)
+	
+	model, err := models.GetModel[openai.ChatModel](modelname)
+	if err!= nil {
+		return nil, fmt.Errorf("failed to fetch model: %w", err)
+	}
+	_ = model
+	
 	response, err := http.Fetch(url)
 
 	if err!= nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to fetch data: %w", err)
 	}
 
 	if !response.Ok() {
@@ -39,17 +58,101 @@ func SearchBooks(query string) (*SearchResponse, error){
 	var searchResult SearchResponse
 	err = response.JSON(&searchResult)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse JSON data: %w", err)
 	}
 
 	return &searchResult, nil
 }
 
-func CategorizeBook(query string) (*BookCategory, error){
+func CategorizeBook(query string) (*BookCategory, error) {
 	books, err := SearchBooks(query)
 	if err != nil {
 		return nil, err
 	}
+
+	model, err := models.GetModel[openai.ChatModel](modelname)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get model: %w", err)
+	}
+
+	// Prepare book list for the prompt
+	bookList := ""
+	for i, book := range books.Docs {
+		bookList += fmt.Sprintf("%d. %s by %s\n", i+1, book.Title, strings.Join(book.AuthorName, ", "))
+	}
+
+	systemPrompt := `You are a helpful book assistant. For each of the following books, write a one-sentence spoiler-free description. Do not include any extra commentary. Just list each book followed by its description.`
+	userPrompt := fmt.Sprintf(`Books:\n%s`, bookList)
+
+	input, err := model.CreateInput(
+		openai.NewSystemMessage(systemPrompt),
+		openai.NewUserMessage(userPrompt),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create model input: %w", err)
+	}
+
+	response, err := model.Invoke(input)
+	if err != nil || len(response.Choices) == 0 {
+		return &BookCategory{
+			Books:       books.Docs,
+			Category:    query,
+			Description: "Could not generate descriptions due to model error.",
+		}, nil
+	}
+
+	// Extract raw content from model
+	raw := strings.TrimSpace(response.Choices[0].Message.Content)
+	fmt.Println("🔍 AI Response:\n", raw) // 👈 Helps debug
+
+	// Try to parse response assuming format like:
+	// 1. Title: Description
+	lines := strings.Split(raw, "\n")
+	for i, line := range lines {
+		if i < len(books.Docs) {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				desc := strings.TrimSpace(parts[1])
+				books.Docs[i].Description = desc
+			}
+		}
+	}
+
+	// Optional: merge all into one long string
+	fullDescription := ""
+	for _, book := range books.Docs {
+		fullDescription += fmt.Sprintf("%s: %s\n", book.Title, book.Description)
+	}
+
+	return &BookCategory{
+		Books:       books.Docs,
+		Category:    query,
+		Description: fullDescription,
+	}, nil
 }
 
-model, err := models.GetModel[]
+
+func CheckBook(){
+	query := "thriller"
+
+	books, err := SearchBooks(query)
+	if err != nil{
+		fmt.Printf("Eroor searching books: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Found %d books:\n", books.NumFound)
+	for _, book := range books.Docs {
+		fmt.Printf("- %s by %v\n", book.Title, book.AuthorName)
+	}
+	
+	// Categorize books
+	category, err := CategorizeBook(query)
+	if err != nil {
+		fmt.Printf("Error categorizing books: %v\n", err)
+		return
+	}
+	
+	fmt.Printf("\nCategory: %s\n", category.Category)
+	fmt.Printf("Description: %s\n", category.Description)
+}
