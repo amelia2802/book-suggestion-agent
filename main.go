@@ -4,11 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
+	"encoding/json"
 
 	"github.com/hypermodeinc/modus/sdk/go/pkg/http"
 	"github.com/hypermodeinc/modus/sdk/go/pkg/models"
 	"github.com/hypermodeinc/modus/sdk/go/pkg/models/openai"
+	"github.com/hypermodeinc/modus/sdk/go/pkg/dgraph"
+
 	
 )
 
@@ -29,7 +31,27 @@ type BookCategory struct {
 	Description	string	`json:"description"`
 }
 
+type BookNode struct {
+	UID         string   `json:"uid,omitempty"`
+	DgraphType  []string `json:"dgraph.type,omitempty"`
+	Title       string   `json:"Book.title"`
+	Description string   `json:"Book.description,omitempty"`
+	Category    string   `json:"Book.category,omitempty"`
+	Authors     []AuthorNode `json:"Book.authors,omitempty"`
+}
+
+type AuthorNode struct {
+	UID        string   `json:"uid,omitempty"`
+	DgraphType []string `json:"dgraph.type,omitempty"`
+	Name       string   `json:"Author.name"`
+}
+
+type BookSearchResult struct {
+	Books []BookNode `json:"books"`
+}
+
 const modelname = "text-generator"
+const dgraphConnection = "dgraph"
 
 func SearchBooks(query string) (*SearchResponse, error){
 
@@ -103,7 +125,7 @@ func CategorizeBook(query string) (*BookCategory, error) {
 
 	// Extract raw content from model
 	raw := strings.TrimSpace(response.Choices[0].Message.Content)
-	fmt.Println("🔍 AI Response:\n", raw) // 👈 Helps debug
+	fmt.Println("AI Response:\n", raw)
 
 	// Try to parse response assuming format like:
 	// 1. Title: Description
@@ -131,13 +153,137 @@ func CategorizeBook(query string) (*BookCategory, error) {
 	}, nil
 }
 
+func StoreBookInGraph(book Book) (*string, error) {
+	// Create author nodes
+	var authors []AuthorNode
+	for _, authorName := range book.AuthorName {
+		authors = append(authors, AuthorNode{
+			DgraphType: []string{"Author"},
+			Name:       authorName,
+		})
+	}
+
+	// Create book node
+	bookNode := BookNode{
+		DgraphType:  []string{"Book"},
+		Title:       book.Title,
+		Description: book.Description,
+		Authors:     authors,
+	}
+
+	// Convert to JSON for mutation
+	bookJson, err := json.Marshal(bookNode)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal book: %w", err)
+	}
+
+	// Execute mutation
+	mutation := dgraph.NewMutation().WithSetJson(string(bookJson))
+	response, err := dgraph.ExecuteMutations(dgraphConnection, mutation)
+	if err != nil {
+		return nil, fmt.Errorf("failed to store book in graph: %w", err)
+	}
+
+	result := fmt.Sprintf("Book stored with UID: %v", response.Uids)
+	return &result, nil
+}
+
+func SearchBooksFromGraph(query string) (*BookSearchResult, error) {
+	dqlQuery := dgraph.NewQuery(`
+		query searchBooks($query: string) {
+			books(func: alloftext(Book.title, $query)) {
+				uid
+				Book.title
+				Book.description
+				Book.category
+				Book.authors {
+					Author.name
+				}
+			}
+		}
+	`).WithVariable("query", query)
+
+	response, err := dgraph.ExecuteQuery(dgraphConnection, dqlQuery)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search books: %w", err)
+	}
+
+	var result BookSearchResult
+	err = json.Unmarshal([]byte(response.Json), &result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse search results: %w", err)
+	}
+
+	return &result, nil
+}
+
+func SearchAndStoreBooks(query string) (*BookCategory, error) {
+	// First, search from external API
+	books, err := SearchBooks(query)
+	if err != nil {
+		return nil, err
+	}
+
+	// Categorize with AI
+	category, err := CategorizeBook(query)
+	if err != nil {
+		return nil, err
+	}
+
+	// Store each book in knowledge graph
+	for _, book := range books.Docs {
+		_, err := StoreBookInGraph(book)
+		if err != nil {
+			fmt.Printf("Warning: failed to store book '%s': %v\n", book.Title, err)
+		}
+	}
+
+	return category, nil
+}
+
+func GetBookRecommendations(authorName string) (*BookSearchResult, error) {
+	dqlQuery := dgraph.NewQuery(`
+		query getRecommendations($author: string) {
+			var(func: eq(Author.name, $author)) {
+				~Book.authors {
+					similar_books as Book.authors {
+						recommended_books as ~Book.authors @filter(NOT eq(Author.name, $author))
+					}
+				}
+			}
+			
+			books(func: uid(recommended_books)) {
+				uid
+				Book.title
+				Book.description
+				Book.authors {
+					Author.name
+				}
+			}
+		}
+	`).WithVariable("author", authorName)
+
+	response, err := dgraph.ExecuteQuery(dgraphConnection, dqlQuery)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get recommendations: %w", err)
+	}
+
+	var result BookSearchResult
+	err = json.Unmarshal([]byte(response.Json), &result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse recommendations: %w", err)
+	}
+
+	return &result, nil
+}
+
 
 func CheckBook(){
 	query := "thriller"
 
 	books, err := SearchBooks(query)
 	if err != nil{
-		fmt.Printf("Eroor searching books: %v\n", err)
+		fmt.Printf("Error searching books: %v\n", err)
 		return
 	}
 

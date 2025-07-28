@@ -15,6 +15,10 @@
     }
   },
   "connections": {
+    "dgraph": {
+      "type": "dgraph",
+      "connString": "dgraph://torc-workshop-graph-amelia.hypermode.host:443?sslmode=verify-ca&bearertoken={{API_KEY}}"
+    },
     "openai": {
       "type": "http",
       "baseUrl": "https://api.openai.com/",
