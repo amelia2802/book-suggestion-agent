@@ -10,8 +10,6 @@ This is a homework project for the [**Hypermode Workshop**](https://hypermode.co
 - [Setup](#setup)
 - [Usage](#usage)
 - [Requirements](#requirements)
-- [Contributing](#contributing)
-- [License](#license)
 
 ## Overview
 
