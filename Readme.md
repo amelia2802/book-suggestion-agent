@@ -28,16 +28,12 @@ git clone https://github.com/amelia2802/book-suggestion-agent.git
 cd book-suggestion-agent
 
 # Install dependencies
-go mod tidy
 npm install
-# Install Hypermode CLI
-scoop install tinygo binaryen
-# Install Hypermode CLI and Modus SDK
-npm install -g @hypermode/modus-sdk 
 npm install -g @hypermode/hyp-cli 
-go get github.com/hypermodeinc/modus/sdk/go/pkg/models/openai@v0.18.0
 # Login to Hypermode
-# Make sure you have a Hypermode account and OpenAI API key 
+# Make sure you have a Hypermode account and OpenAI API key, create a .env file in root folder and place your api key there
+ ```MODUS_OPENAI_API_KEY= your_openai_api_key
+MODUS_DGRAPH_API_KEY= your_dgraph_api_key```
 hyp dev
 hyp login
 ```
@@ -52,7 +48,7 @@ modus dev
 
 ## Requirements
 
-- List any prerequisites or dependencies.
+- Node.js - v22 or higher
 - go version >= 1.20
 - TinyGo
 - Hypermode CLI
