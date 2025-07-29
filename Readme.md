@@ -44,6 +44,8 @@ To run the book suggestion agent, follow these steps:
 ```bash
 # Start the Hypermode development environment  
 modus dev
+# Go to the following address and check by entering the genre
+http://localhost:8686/explorer/
 ```
 
 ## Requirements
