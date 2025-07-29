@@ -17,6 +17,9 @@ This is a homework project for the [**Hypermode Workshop**](https://hypermode.co
 
 This project is a book suggestion agent that utilizes the Hypermode platform to provide personalized book recommendations based on user preferences. It integrates with the OpenAI API to analyze user input and suggest books accordingly.
 
+<img width="1917" height="859" alt="Screenshot (34)" src="https://github.com/user-attachments/assets/e2e3a256-47e8-4acd-85c2-a66f9b260898" />
+
+
 ## Setup
 
 ```bash
